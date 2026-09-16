@@ -78,3 +78,35 @@ export const approveSuggestionSchema = z.object({
 });
 
 export const actionIdParamSchema = z.object({ id: objectIdSchema });
+
+/**
+ * Bulk operation payload.
+ *
+ * The operation discriminator decides which field is required, so the shape is
+ * validated with a discriminated union rather than a bag of optionals - a
+ * `status` request without a status is rejected instead of silently doing
+ * nothing. The id cap bounds the work a single request can enqueue.
+ */
+export const bulkActionSchema = z.discriminatedUnion('operation', [
+  z.object({
+    operation: z.literal('status'),
+    actionIds: z.array(objectIdSchema).min(1).max(100),
+    status: actionStatusSchema,
+  }),
+  z.object({
+    operation: z.literal('assign'),
+    actionIds: z.array(objectIdSchema).min(1).max(100),
+    assigneeId: nullableObjectId,
+  }),
+  z.object({
+    operation: z.literal('priority'),
+    actionIds: z.array(objectIdSchema).min(1).max(100),
+    priority: actionPrioritySchema,
+  }),
+  z.object({
+    operation: z.literal('delete'),
+    actionIds: z.array(objectIdSchema).min(1).max(100),
+  }),
+]);
+
+export type BulkActionInput = z.infer<typeof bulkActionSchema>;

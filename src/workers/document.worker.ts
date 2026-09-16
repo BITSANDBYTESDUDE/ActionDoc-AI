@@ -17,6 +17,7 @@ import {
   markDocumentExtractionFailed,
 } from '@/services/extraction.service';
 import { runAnalysisForDocument } from '@/services/ai.service';
+import { runDeadlineSweep } from '@/services/reminder.service';
 import { enqueueDocumentProcessing, type ProcessDocumentJobData } from '@/lib/queue/document.queue';
 
 export interface ProcessDocumentResult {
@@ -177,9 +178,67 @@ export async function startDocumentWorker(): Promise<() => Promise<void>> {
 
   console.log(`[worker] listening on "${DOCUMENT_QUEUE_NAME}" with concurrency ${concurrency}`);
 
+  await startDeadlineSweep();
+
   return async () => {
     await worker.close();
   };
+}
+
+const DEADLINE_QUEUE_NAME = 'actiondoc-deadlines';
+const DEADLINE_JOB_NAME = 'deadline-sweep';
+
+/**
+ * Schedule the recurring deadline sweep on the same Redis instance.
+ *
+ * BullMQ repeatable jobs are keyed by name + pattern, so restarting the worker
+ * producers does not stack duplicate schedules. The sweep itself is idempotent,
+ * which is what actually guarantees a single notification per deadline.
+ *
+ * Set DEADLINE_SWEEP_ENABLED=false to run the sweep elsewhere (e.g. a cron
+ * trigger) without a second scheduler competing.
+ */
+async function startDeadlineSweep(): Promise<void> {
+  if (process.env.DEADLINE_SWEEP_ENABLED === 'false') {
+    console.log('[worker] deadline sweep disabled');
+    return;
+  }
+
+  const redisUrl = process.env.REDIS_URL;
+  if (!redisUrl) return;
+
+  const pattern = process.env.DEADLINE_SWEEP_CRON ?? '0 * * * *'; // hourly
+
+  const { Queue, Worker } = await import('bullmq');
+  const connection = { url: redisUrl };
+
+  const queue = new Queue(DEADLINE_QUEUE_NAME, { connection });
+  await queue.upsertJobScheduler(
+    DEADLINE_JOB_NAME,
+    { pattern, tz: 'UTC' },
+    {
+      name: DEADLINE_JOB_NAME,
+      opts: {
+        removeOnComplete: { age: 24 * 3600, count: 100 },
+        removeOnFail: { age: 7 * 24 * 3600, count: 100 },
+      },
+    },
+  );
+  console.log(`[worker] deadline sweep scheduled with pattern "${pattern}"`);
+
+  const sweepWorker = new Worker(
+    DEADLINE_QUEUE_NAME,
+    async () => {
+      const result = await runDeadlineSweep();
+      console.log('[worker] deadline sweep finished', result);
+      return result;
+    },
+    { connection, concurrency: 1 },
+  );
+
+  sweepWorker.on('failed', (_job, error) => {
+    console.error('[worker] deadline sweep failed', error instanceof Error ? error.message : String(error));
+  });
 }
 
 /** Re-enqueue a document that previously failed. */

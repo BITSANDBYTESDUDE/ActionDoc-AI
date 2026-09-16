@@ -29,7 +29,25 @@ const suggestionSchema = new Schema(
     sourceLocation: { type: String, default: null },
 
     status: { type: String, enum: SUGGESTION_STATUSES, default: 'PENDING' },
-    /** Original AI values are never mutated by review edits. */
+    /**
+     * Snapshot of the AI's original values, captured on the first human edit so
+     * the reviewer can always see what the model actually proposed. The current
+     * values above are the working copy that gets approved.
+     */
+    original: {
+      type: new Schema(
+        {
+          title: { type: String, required: true },
+          description: { type: String, default: '' },
+          assigneeName: { type: String, default: null },
+          dueDate: { type: Date, default: null },
+          priority: { type: String, enum: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'], default: 'MEDIUM' },
+        },
+        { _id: false },
+      ),
+      default: null,
+    },
+    /** True once a human has changed any AI-proposed field. */
     edited: { type: Boolean, default: false },
     reviewerId: { type: Schema.Types.ObjectId, ref: 'User', default: null },
     reviewedAt: { type: Date, default: null },

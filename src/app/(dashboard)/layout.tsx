@@ -3,6 +3,7 @@ import { requireAuth } from '@/lib/auth/session';
 import { resolveOrganizationContext } from '@/lib/auth/guards';
 import { listOrganizationsForUser } from '@/services/organization.service';
 import { getDashboardData } from '@/services/dashboard.service';
+import { countUnreadNotifications } from '@/services/notification.service';
 import { AppShell } from '@/components/layout/app-shell';
 import { ForbiddenError, ValidationError } from '@/lib/errors';
 
@@ -46,6 +47,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
     recentLimit: 1,
   });
 
+  // Non-critical chrome: a failure here must not take down the whole shell.
+  const unreadNotifications = await countUnreadNotifications({
+    organizationId: context.organizationId,
+    userId: context.userId,
+  }).catch(() => 0);
+
   return (
     <AppShell
       organizations={organizations}
@@ -55,6 +62,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       counts={{
         openActions: dashboard.stats.actions.pending + dashboard.stats.actions.inProgress,
         reviewDocuments: dashboard.stats.documents.review,
+        unreadNotifications,
       }}
     >
       {children}

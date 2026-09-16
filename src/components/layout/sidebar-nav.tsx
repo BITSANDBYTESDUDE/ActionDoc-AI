@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
+  Bell,
   CalendarDays,
   FolderKanban,
   LayoutDashboard,
@@ -18,6 +19,7 @@ const NAV_ITEMS = [
   { href: '/actions', label: 'Actions', icon: ListChecks },
   { href: '/projects', label: 'Projects', icon: FolderKanban },
   { href: '/calendar', label: 'Calendar', icon: CalendarDays },
+  { href: '/notifications', label: 'Notifications', icon: Bell },
   { href: '/settings', label: 'Settings', icon: Settings },
 ] as const;
 
@@ -30,7 +32,7 @@ export function SidebarNav({
   counts,
   onNavigate,
 }: {
-  counts?: { openActions?: number; reviewDocuments?: number };
+  counts?: { openActions?: number; reviewDocuments?: number; unreadNotifications?: number };
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
@@ -38,6 +40,7 @@ export function SidebarNav({
   const badges: Record<string, number | undefined> = {
     '/actions': counts?.openActions,
     '/documents': counts?.reviewDocuments,
+    '/notifications': counts?.unreadNotifications,
   };
 
   return (
