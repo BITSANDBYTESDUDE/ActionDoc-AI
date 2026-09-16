@@ -121,6 +121,18 @@ export function AppShell({
         <main id="main-content" className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
           {children}
         </main>
+
+        <footer className="border-t border-border bg-card px-4 py-3 text-center text-xs text-muted-foreground sm:px-6 lg:px-8">
+          Powered by{' '}
+          <a
+            href="http://bitsandbytesdude.vercel.app"
+            target="_blank"
+            rel="noreferrer"
+            className="font-medium text-foreground underline-offset-4 hover:underline"
+          >
+            BITSANDBYTESDUDE
+          </a>
+        </footer>
       </div>
     </div>
   );
