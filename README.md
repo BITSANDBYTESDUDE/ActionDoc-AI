@@ -54,11 +54,13 @@ Upload Document -> Extract Text -> Analyze with AI -> Generate Suggestions
 
 **Work execution**
 - Action Center with views (All / My Actions / Today / Upcoming / Overdue / Completed) and filters
+- Bulk operations across a selection - change status, assign, set priority or delete many actions at once, with a per-item report when some are skipped
 - Whitelisted status transitions with `completedAt` stamping
 - Assignment restricted to organization members
 - Projects with action counts
 - Calendar with month grid, upcoming and overdue lists
-- Per-user notifications with unread counts
+- Per-user notifications with unread counts, plus deadline reminders (`ACTION_DUE_SOON`, `ACTION_OVERDUE`) swept on a schedule
+- Optional email copies of notifications via Resend; in-app notifications are written first and email is strictly best-effort
 
 **Platform**
 - Multi-tenant from the database up: every organization-owned query starts from `organizationId`
@@ -409,6 +411,7 @@ The web app enqueues; the worker processes. Without `REDIS_URL`, or with `ENABLE
 | `GET` / `POST` | `/api/actions` | List / create |
 | `GET`, `PATCH`, `DELETE` | `/api/actions/[id]` | Detail / update / delete |
 | `PATCH` | `/api/actions/[id]/status` | Transition status |
+| `POST` | `/api/actions/bulk` | Apply one operation to many actions |
 | `GET` / `POST` | `/api/projects` | List / create |
 | `GET`, `PATCH`, `DELETE` | `/api/projects/[id]` | Detail / update / archive |
 | `GET` | `/api/dashboard` | Aggregated dashboard statistics |

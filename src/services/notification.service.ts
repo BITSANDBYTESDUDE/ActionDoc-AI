@@ -1,6 +1,8 @@
 import { Types } from 'mongoose';
 import { connectToDatabase } from '@/lib/db/connect';
 import { Notification } from '@/models/Notification';
+import { User } from '@/models/User';
+import { sendEmail } from '@/lib/notifications/email';
 import type { NotificationType } from '@/types';
 
 export interface CreateNotificationInput {
@@ -13,6 +15,14 @@ export interface CreateNotificationInput {
   relatedEntityId?: Types.ObjectId | null;
   /** Stable key that makes notification creation idempotent. */
   dedupeKey?: string | null;
+  /**
+   * Optional email copy of this notification.
+   *
+   * Email is strictly a side channel: it is attempted only after the in-app
+   * notification is written, and only when the in-app write actually happened
+   * (never for a deduped repeat). Delivery failures are logged, not thrown.
+   */
+  email?: { subject: string; text: string };
 }
 
 /**
@@ -21,10 +31,14 @@ export interface CreateNotificationInput {
  * Uses the unique (userId, dedupeKey) index to make repeated worker runs safe:
  * a duplicate key error simply means the user has already been told.
  *
+ * Returns `true` when a new notification was written, `false` when it was a
+ * duplicate or the write failed - callers that also email use this to avoid
+ * sending the same reminder twice.
+ *
  * Never notifies the actor about their own action - handled by callers passing
  * an explicit userId, and by `skipUserId` here for convenience.
  */
-export async function createNotification(input: CreateNotificationInput): Promise<void> {
+export async function createNotification(input: CreateNotificationInput): Promise<boolean> {
   await connectToDatabase();
   try {
     await Notification.create({
@@ -38,16 +52,46 @@ export async function createNotification(input: CreateNotificationInput): Promis
       dedupeKey: input.dedupeKey ?? null,
     });
   } catch (error) {
-    if (isDuplicateKeyError(error)) return;
+    if (isDuplicateKeyError(error)) return false;
     console.error('[notifications] failed to create notification', {
       type: input.type,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+
+  if (input.email) {
+    await deliverNotificationEmail({ userId: input.userId, email: input.email });
+  }
+
+  return true;
+}
+
+/**
+ * Look up the recipient and send the email copy.
+ *
+ * Best-effort by design: a user with no email on file, or an unconfigured
+ * Resend key, must not turn a reminder into an error.
+ */
+async function deliverNotificationEmail(params: {
+  userId: Types.ObjectId;
+  email: { subject: string; text: string };
+}): Promise<void> {
+  try {
+    const user = await User.findById(params.userId).select('email').lean();
+    const to = (user?.email as string | undefined) ?? null;
+    if (!to) return;
+    await sendEmail({ to, subject: params.email.subject, text: params.email.text });
+  } catch (error) {
+    console.error('[notifications] failed to send email copy', {
       error: error instanceof Error ? error.message : String(error),
     });
   }
 }
 
-export async function createNotifications(inputs: CreateNotificationInput[]): Promise<void> {
-  await Promise.all(inputs.map((input) => createNotification(input)));
+export async function createNotifications(inputs: CreateNotificationInput[]): Promise<number> {
+  const results = await Promise.all(inputs.map((input) => createNotification(input)));
+  return results.filter(Boolean).length;
 }
 
 export function isDuplicateKeyError(error: unknown): boolean {

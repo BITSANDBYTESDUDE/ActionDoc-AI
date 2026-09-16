@@ -54,6 +54,14 @@ export interface ReviewSuggestion {
   reviewedAt: string | null;
   rejectionReason: string | null;
   edited: boolean;
+  /** AI's original proposal, kept once a reviewer edits the suggestion. */
+  original: {
+    title: string;
+    description: string;
+    assigneeName: string | null;
+    dueDate: string | null;
+    priority: string;
+  } | null;
 }
 
 export default async function DocumentDetailPage({
@@ -102,6 +110,17 @@ export default async function DocumentDetailPage({
     reviewedAt: suggestion.reviewedAt ? new Date(suggestion.reviewedAt).toISOString() : null,
     rejectionReason: suggestion.rejectionReason ?? null,
     edited: Boolean(suggestion.edited),
+    original: suggestion.original
+      ? {
+          title: suggestion.original.title,
+          description: suggestion.original.description ?? '',
+          assigneeName: suggestion.original.assigneeName ?? null,
+          dueDate: suggestion.original.dueDate
+            ? new Date(suggestion.original.dueDate).toISOString()
+            : null,
+          priority: suggestion.original.priority,
+        }
+      : null,
   }));
 
   const pendingCount = suggestions.filter((suggestion) => suggestion.status === 'PENDING').length;

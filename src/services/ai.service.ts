@@ -7,8 +7,7 @@ import { analyzeDocument, parseAiDueDate } from '@/lib/ai/analyze';
 import { NotFoundError, ValidationError } from '@/lib/errors';
 import { EXTRACTION_VERSION } from '@/config/constants';
 import { recordAuditEvent } from '@/services/audit.service';
-import { createNotifications } from '@/services/notification.service';
-import { isDuplicateKeyError } from '@/services/notification.service';
+import { createNotification, createNotifications, isDuplicateKeyError } from '@/services/notification.service';
 
 /**
  * AI analysis stage of the pipeline.
@@ -163,6 +162,14 @@ export async function runAnalysisForDocument(params: {
       });
     }
 
+    await notifyUploaderDocumentReady({
+      organizationId: params.organizationId,
+      documentId: String(document._id),
+      documentName: document.displayName,
+      uploaderId: document.createdById as Types.ObjectId | null,
+      suggestionCount: suggestionDocs.length,
+    });
+
     return {
       extractionId: String(extraction._id),
       suggestionCount: suggestionDocs.length,
@@ -257,6 +264,41 @@ async function resolveAssignees(params: {
   }
 
   return resolved;
+}
+
+/**
+ * Confirm to the uploader that processing finished. Reviewers get their own
+ * notification above; this one closes the loop for whoever uploaded the file.
+ */
+async function notifyUploaderDocumentReady(params: {
+  organizationId: Types.ObjectId;
+  documentId: string;
+  documentName: string;
+  uploaderId: Types.ObjectId | null;
+  suggestionCount: number;
+}): Promise<void> {
+  if (!params.uploaderId) return;
+
+  const detail =
+    params.suggestionCount > 0
+      ? `${params.suggestionCount} suggested action(s) are ready for review.`
+      : 'No action items were detected.';
+
+  await createNotification({
+    organizationId: params.organizationId,
+    userId: params.uploaderId,
+    type: 'DOCUMENT_READY',
+    title: 'Document processed',
+    message: `"${params.documentName}" has been analysed. ${detail}`,
+    relatedEntityType: 'DOCUMENT',
+    relatedEntityId: new Types.ObjectId(params.documentId),
+    // Keyed on the extraction outcome so a re-analysis notifies again, but a
+    // retried worker run for the same result does not.
+    dedupeKey: `document-ready:${params.documentId}:${params.suggestionCount}`,
+  }).catch((error) => {
+    if (isDuplicateKeyError(error)) return;
+    console.error('[ai] failed to notify uploader', error);
+  });
 }
 
 /** Tell members who can review that suggestions are waiting. */

@@ -688,6 +688,144 @@ describe('suggestion review', () => {
     // Approval must never invent a user account.
     expect(await User.countDocuments({})).toBe(usersBefore);
   });
+
+  it('snapshots the original AI values the first time a suggestion is edited', async () => {
+    const f = await seed();
+
+    await editSuggestion({
+      organizationId: f.org.objectId,
+      documentId: f.documentId,
+      suggestionId: f.suggestionId,
+      actorId: f.admin.objectId,
+      actorName: f.admin.name,
+      input: { title: 'Send the revised budget to finance', priority: 'URGENT' },
+    });
+
+    const extraction = await DocumentExtraction.findById(f.extractionId).lean();
+    const suggestion = extraction?.actions[0];
+
+    // The working copy reflects the human's edit...
+    expect(suggestion?.title).toBe('Send the revised budget to finance');
+    expect(suggestion?.priority).toBe('URGENT');
+    expect(suggestion?.edited).toBe(true);
+    // ...while the AI's original proposal stays visible for the reviewer.
+    expect(suggestion?.original?.title).toBe('Send the revised budget');
+    expect(suggestion?.original?.priority).toBe('HIGH');
+    expect(suggestion?.original?.assigneeName).toBe('Mia Member');
+    expect(suggestion?.original?.dueDate).toEqual(new Date('2026-04-18T00:00:00Z'));
+  });
+
+  it('keeps the first snapshot when a suggestion is edited repeatedly', async () => {
+    const f = await seed();
+
+    await editSuggestion({
+      organizationId: f.org.objectId,
+      documentId: f.documentId,
+      suggestionId: f.suggestionId,
+      actorId: f.admin.objectId,
+      actorName: f.admin.name,
+      input: { title: 'First human title' },
+    });
+    await editSuggestion({
+      organizationId: f.org.objectId,
+      documentId: f.documentId,
+      suggestionId: f.suggestionId,
+      actorId: f.admin.objectId,
+      actorName: f.admin.name,
+      input: { title: 'Second human title', priority: 'LOW' },
+    });
+
+    const extraction = await DocumentExtraction.findById(f.extractionId).lean();
+    const suggestion = extraction?.actions[0];
+
+    expect(suggestion?.title).toBe('Second human title');
+    expect(suggestion?.priority).toBe('LOW');
+    // The snapshot must still be the AI's output, not the first human edit.
+    expect(suggestion?.original?.title).toBe('Send the revised budget');
+    expect(suggestion?.original?.priority).toBe('HIGH');
+  });
+
+  it('leaves the snapshot untouched when a suggestion is approved without edits', async () => {
+    const f = await seed();
+
+    await approveSuggestion({
+      organizationId: f.org.objectId,
+      documentId: f.documentId,
+      suggestionId: f.suggestionId,
+      actorId: f.admin.objectId,
+      actorName: f.admin.name,
+    });
+
+    const extraction = await DocumentExtraction.findById(f.extractionId).lean();
+    const suggestion = extraction?.actions[0];
+
+    expect(suggestion?.edited).toBe(false);
+    expect(suggestion?.original ?? null).toBeNull();
+    expect(suggestion?.title).toBe('Send the revised budget');
+  });
+
+  it('does not let editing one suggestion disturb its siblings', async () => {
+    const f = await seed();
+    // A second pending suggestion in the same extraction.
+    await DocumentExtraction.updateOne(
+      { _id: f.extractionId },
+      {
+        $push: {
+          actions: {
+            suggestionId: 's2-def456',
+            title: 'Book the venue',
+            description: 'Needs a deposit.',
+            priority: 'MEDIUM',
+            actionType: 'TASK',
+            confidence: 0.61,
+            evidence: 'We should book the venue next week.',
+            status: 'PENDING',
+          },
+        },
+      },
+    );
+
+    await editSuggestion({
+      organizationId: f.org.objectId,
+      documentId: f.documentId,
+      suggestionId: 's2-def456',
+      actorId: f.admin.objectId,
+      actorName: f.admin.name,
+      input: { title: 'Book the venue and pay the deposit' },
+    });
+
+    const extraction = await DocumentExtraction.findById(f.extractionId).lean();
+    const first = extraction?.actions.find((item) => item.suggestionId === f.suggestionId);
+    const second = extraction?.actions.find((item) => item.suggestionId === 's2-def456');
+
+    expect(second?.title).toBe('Book the venue and pay the deposit');
+    expect(second?.edited).toBe(true);
+    expect(second?.original?.title).toBe('Book the venue');
+    // The untouched sibling keeps its AI values and no snapshot.
+    expect(first?.title).toBe('Send the revised budget');
+    expect(first?.edited).toBe(false);
+    expect(first?.original ?? null).toBeNull();
+  });
+
+  it('rejects an edit from outside the organization', async () => {
+    const f = await seed();
+
+    await expect(
+      editSuggestion({
+        organizationId: f.otherOrg.objectId,
+        documentId: f.documentId,
+        suggestionId: f.suggestionId,
+        actorId: f.outsider.objectId,
+        actorName: f.outsider.name,
+        input: { title: 'Cross-tenant edit' },
+      }),
+    ).rejects.toThrow(ConflictError);
+
+    const extraction = await DocumentExtraction.findById(f.extractionId).lean();
+    const suggestion = extraction?.actions[0];
+    expect(suggestion?.title).toBe('Send the revised budget');
+    expect(suggestion?.edited).toBe(false);
+  });
 });
 
 describe('notifications from real events', () => {
@@ -772,6 +910,31 @@ describe('audit trail', () => {
 
     expect(await AuditLog.countDocuments({ organizationId: f.otherOrg.objectId })).toBe(0);
     expect(await AuditLog.countDocuments({ organizationId: f.org.objectId })).toBeGreaterThan(0);
+  });
+
+  it('refuses to modify or delete an audit entry - the trail is append-only', async () => {
+    const f = await seed();
+    await createAction({
+      organizationId: f.org.objectId,
+      actorId: f.admin.objectId,
+      actorName: f.admin.name,
+      input: { title: 'Audited action', description: '', priority: 'MEDIUM', actionType: 'TASK' },
+    });
+
+    const entry = await AuditLog.findOne({ organizationId: f.org.objectId }).lean();
+    expect(entry).toBeTruthy();
+
+    await expect(
+      AuditLog.updateOne({ _id: entry!._id }, { $set: { action: 'ACTION_DELETED' } }),
+    ).rejects.toThrow(/append-only/i);
+    await expect(AuditLog.deleteOne({ _id: entry!._id })).rejects.toThrow(/append-only/i);
+    await expect(
+      AuditLog.updateMany({ organizationId: f.org.objectId }, { $set: { actorName: 'x' } }),
+    ).rejects.toThrow(/append-only/i);
+
+    // The original entry must still be intact.
+    const after = await AuditLog.findById(entry!._id).lean();
+    expect(after?.action).toBe(entry!.action);
   });
 });
 

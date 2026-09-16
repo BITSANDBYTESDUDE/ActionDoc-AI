@@ -18,6 +18,10 @@ export const AUDIT_ACTIONS = [
   'ACTION_ASSIGNED',
   'ACTION_STATUS_CHANGED',
   'ACTION_DELETED',
+  'ACTIONS_BULK_STATUS',
+  'ACTIONS_BULK_ASSIGN',
+  'ACTIONS_BULK_PRIORITY',
+  'ACTIONS_BULK_DELETE',
   'PROJECT_CREATED',
   'PROJECT_UPDATED',
   'PROJECT_ARCHIVED',
@@ -46,6 +50,42 @@ const auditLogSchema = new Schema(
 auditLogSchema.index({ organizationId: 1, timestamp: -1 });
 auditLogSchema.index({ organizationId: 1, action: 1, timestamp: -1 });
 auditLogSchema.index({ organizationId: 1, entityType: 1, entityId: 1, timestamp: -1 });
+
+/**
+ * Immutability guards.
+ *
+ * The service layer only ever inserts, but a stray `updateOne`/`deleteOne`
+ * added later (or a console session) would silently rewrite the trail. These
+ * hooks make that fail loudly at the model boundary instead of trusting
+ * convention. `withTransaction` catches the thrown error like any other.
+ */
+const IMMUTABLE_MESSAGE =
+  'Audit log entries are append-only and cannot be modified or deleted.';
+
+auditLogSchema.pre('updateOne', function () {
+  throw new Error(IMMUTABLE_MESSAGE);
+});
+auditLogSchema.pre('updateMany', function () {
+  throw new Error(IMMUTABLE_MESSAGE);
+});
+auditLogSchema.pre('findOneAndUpdate', function () {
+  throw new Error(IMMUTABLE_MESSAGE);
+});
+auditLogSchema.pre('findOneAndReplace', function () {
+  throw new Error(IMMUTABLE_MESSAGE);
+});
+auditLogSchema.pre('replaceOne', function () {
+  throw new Error(IMMUTABLE_MESSAGE);
+});
+auditLogSchema.pre('deleteOne', function () {
+  throw new Error(IMMUTABLE_MESSAGE);
+});
+auditLogSchema.pre('deleteMany', function () {
+  throw new Error(IMMUTABLE_MESSAGE);
+});
+auditLogSchema.pre('findOneAndDelete', function () {
+  throw new Error(IMMUTABLE_MESSAGE);
+});
 
 export type AuditLogDocument = InferSchemaType<typeof auditLogSchema> & { _id: Types.ObjectId };
 export type AuditLogModel = Model<AuditLogDocument>;

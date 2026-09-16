@@ -13,6 +13,12 @@ import { Pagination } from '@/components/shared/pagination';
 import { ActionFilters } from '@/components/actions/action-filters';
 import { ActionQuickCreate } from '@/components/actions/action-quick-create';
 import { ActionRowActions } from '@/components/actions/action-row-actions';
+import { ActionSelectionProvider } from '@/components/actions/action-selection';
+import { ActionBulkToolbar } from '@/components/actions/action-bulk-toolbar';
+import {
+  ActionSelectAllCheckbox,
+  ActionSelectCheckbox,
+} from '@/components/actions/action-select-checkbox';
 import { formatDueDate } from '@/lib/utils/format';
 import { actionListQuerySchema } from '@/lib/validation/action';
 import { cn } from '@/lib/utils';
@@ -136,110 +142,124 @@ export default async function ActionsPage({ searchParams }: { searchParams: Sear
           />
         )
       ) : (
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[60rem] border-collapse text-sm">
-              <caption className="sr-only">
-                Actions in {context.organizationName}, page {result.page} of {result.totalPages}
-              </caption>
-              <thead>
-                <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Action
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Status
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Priority
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Assignee
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Due
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    Project
-                  </th>
-                  <th scope="col" className="px-4 py-2.5 font-medium">
-                    <span className="sr-only">Actions</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {result.items.map((action) => (
-                  <tr
-                    key={action.id}
-                    className={cn(
-                      'border-b border-border last:border-0 hover:bg-accent/40',
-                      action.isOverdue && 'bg-destructive/[0.03]',
-                    )}
-                  >
-                    <td className="px-4 py-3">
-                      <Link href={`/actions/${action.id}`} className="group block">
-                        <span className="flex items-center gap-2">
-                          <span className="truncate font-medium group-hover:text-primary">
-                            {action.title}
-                          </span>
-                          {action.aiGenerated ? <AiBadge confidence={action.aiConfidence} /> : null}
-                        </span>
-                        {action.sourceDocumentName ? (
-                          <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                            From “{action.sourceDocumentName}”
-                          </span>
-                        ) : null}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      <ActionStatusBadge status={action.status} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <PriorityBadge priority={action.priority} />
-                    </td>
-                    <td className="px-4 py-3 text-xs">
-                      {action.assigneeName ?? (
-                        <span className="text-muted-foreground">Unassigned</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-xs">
-                      <span className="flex items-center gap-1.5">
-                        {formatDueDate(action.dueDate)}
-                        {action.isOverdue ? <OverdueBadge /> : null}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted-foreground">
-                      {action.projectName ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <ActionRowActions
-                        action={{
-                          id: action.id,
-                          title: action.title,
-                          status: action.status,
-                          priority: action.priority,
-                        }}
-                        members={members.map((member) => ({ id: member.userId, name: member.name }))}
-                        canDelete={context.role === 'OWNER' || context.role === 'ADMIN'}
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="border-t border-border px-4 py-3">
-            <Pagination
-              page={result.page}
-              totalPages={result.totalPages}
-              total={result.total}
-              pageSize={result.pageSize}
-              basePath="/actions"
-              searchParams={raw}
+        <ActionSelectionProvider>
+          <div className="space-y-3">
+            <ActionBulkToolbar
+              members={members.map((member) => ({ id: member.userId, name: member.name }))}
             />
+
+            <Card className="overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[60rem] border-collapse text-sm">
+                  <caption className="sr-only">
+                    Actions in {context.organizationName}, page {result.page} of {result.totalPages}
+                  </caption>
+                  <thead>
+                    <tr className="border-b border-border bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                      <th scope="col" className="w-10 px-4 py-2.5 font-medium">
+                        <ActionSelectAllCheckbox ids={result.items.map((action) => action.id)} />
+                      </th>
+                      <th scope="col" className="px-4 py-2.5 font-medium">
+                        Action
+                      </th>
+                      <th scope="col" className="px-4 py-2.5 font-medium">
+                        Status
+                      </th>
+                      <th scope="col" className="px-4 py-2.5 font-medium">
+                        Priority
+                      </th>
+                      <th scope="col" className="px-4 py-2.5 font-medium">
+                        Assignee
+                      </th>
+                      <th scope="col" className="px-4 py-2.5 font-medium">
+                        Due
+                      </th>
+                      <th scope="col" className="px-4 py-2.5 font-medium">
+                        Project
+                      </th>
+                      <th scope="col" className="px-4 py-2.5 font-medium">
+                        <span className="sr-only">Actions</span>
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.items.map((action) => (
+                      <tr
+                        key={action.id}
+                        className={cn(
+                          'border-b border-border last:border-0 hover:bg-accent/40',
+                          action.isOverdue && 'bg-destructive/[0.03]',
+                        )}
+                      >
+                        <td className="px-4 py-3">
+                          <ActionSelectCheckbox actionId={action.id} title={action.title} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <Link href={`/actions/${action.id}`} className="group block">
+                            <span className="flex items-center gap-2">
+                              <span className="truncate font-medium group-hover:text-primary">
+                                {action.title}
+                              </span>
+                              {action.aiGenerated ? <AiBadge confidence={action.aiConfidence} /> : null}
+                            </span>
+                            {action.sourceDocumentName ? (
+                              <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+                                From “{action.sourceDocumentName}”
+                              </span>
+                            ) : null}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">
+                          <ActionStatusBadge status={action.status} />
+                        </td>
+                        <td className="px-4 py-3">
+                          <PriorityBadge priority={action.priority} />
+                        </td>
+                        <td className="px-4 py-3 text-xs">
+                          {action.assigneeName ?? (
+                            <span className="text-muted-foreground">Unassigned</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs">
+                          <span className="flex items-center gap-1.5">
+                            {formatDueDate(action.dueDate)}
+                            {action.isOverdue ? <OverdueBadge /> : null}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-muted-foreground">
+                          {action.projectName ?? '—'}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <ActionRowActions
+                            action={{
+                              id: action.id,
+                              title: action.title,
+                              status: action.status,
+                              priority: action.priority,
+                            }}
+                            members={members.map((member) => ({ id: member.userId, name: member.name }))}
+                            canDelete={context.role === 'OWNER' || context.role === 'ADMIN'}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="border-t border-border px-4 py-3">
+                <Pagination
+                  page={result.page}
+                  totalPages={result.totalPages}
+                  total={result.total}
+                  pageSize={result.pageSize}
+                  basePath="/actions"
+                  searchParams={raw}
+                />
+              </div>
+            </Card>
           </div>
-        </Card>
+        </ActionSelectionProvider>
       )}
 
       <p className="flex items-center gap-2 text-xs text-muted-foreground">

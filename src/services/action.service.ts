@@ -5,12 +5,12 @@ import { Action } from '@/models/Action';
 import { Document } from '@/models/Document';
 import { DocumentExtraction } from '@/models/DocumentExtraction';
 import { Project } from '@/models/Project';
-import { ConflictError, ForbiddenError, NotFoundError } from '@/lib/errors';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '@/lib/errors';
 import { MAX_PAGE_SIZE } from '@/config/constants';
 import { paginated, type PaginatedResult } from '@/lib/validation/common';
 import { assertTransition, transitionTimestamps } from '@/services/action-transitions';
 import { assertMemberOfOrganization } from '@/services/organization.service';
-import { recordAuditEvent } from '@/services/audit.service';
+import { recordAuditEvent, type AuditAction } from '@/services/audit.service';
 import { createNotification } from '@/services/notification.service';
 import type { ActionListQuery } from '@/lib/validation/action';
 import type { ActionPriority, ActionStatus, ActionType, UserRole } from '@/types';
@@ -528,6 +528,130 @@ export async function changeActionStatus(params: {
   return getActionDetail({ organizationId: params.organizationId, actionId: params.actionId });
 }
 
+/**
+ * Bulk operations over a set of actions.
+ *
+ * Deliberately partial-failure tolerant: each action is processed independently
+ * and reported per-item, because a single invalid status transition in a
+ * 30-item selection should not throw away the other 29 successful changes.
+ * Every id is still resolved through the same organization-scoped authorization
+ * helpers, so a foreign id simply reports as failed rather than leaking.
+ */
+export type BulkOperation = 'status' | 'assign' | 'priority' | 'delete';
+
+/** Explicit map so the audit action stays a known literal, not a built string. */
+const BULK_AUDIT_ACTION = {
+  status: 'ACTIONS_BULK_STATUS',
+  assign: 'ACTIONS_BULK_ASSIGN',
+  priority: 'ACTIONS_BULK_PRIORITY',
+  delete: 'ACTIONS_BULK_DELETE',
+} as const satisfies Record<BulkOperation, AuditAction>;
+
+export interface BulkActionResult {
+  requested: number;
+  succeeded: number;
+  failed: { actionId: string; reason: string }[];
+}
+
+export async function bulkUpdateActions(params: {
+  organizationId: Types.ObjectId;
+  actorId: Types.ObjectId;
+  actorName: string;
+  role: UserRole;
+  actionIds: string[];
+  operation: BulkOperation;
+  status?: ActionStatus;
+  assigneeId?: string | null;
+  priority?: ActionPriority;
+}): Promise<BulkActionResult> {
+  await connectToDatabase();
+
+  const failed: { actionId: string; reason: string }[] = [];
+  let succeeded = 0;
+
+  for (const actionId of params.actionIds) {
+    try {
+      switch (params.operation) {
+        case 'status':
+          await changeActionStatus({
+            organizationId: params.organizationId,
+            actionId,
+            actorId: params.actorId,
+            actorName: params.actorName,
+            role: params.role,
+            status: params.status!,
+          });
+          break;
+        case 'assign':
+          await updateAction({
+            organizationId: params.organizationId,
+            actionId,
+            actorId: params.actorId,
+            actorName: params.actorName,
+            role: params.role,
+            input: { assigneeId: params.assigneeId ?? null },
+          });
+          break;
+        case 'priority':
+          await updateAction({
+            organizationId: params.organizationId,
+            actionId,
+            actorId: params.actorId,
+            actorName: params.actorName,
+            role: params.role,
+            input: { priority: params.priority },
+          });
+          break;
+        case 'delete':
+          await deleteAction({
+            organizationId: params.organizationId,
+            actionId,
+            actorId: params.actorId,
+            actorName: params.actorName,
+            role: params.role,
+          });
+          break;
+      }
+      succeeded += 1;
+    } catch (error) {
+      // Expected control-flow errors (not found, forbidden, invalid transition)
+      // are surfaced per item. Anything unexpected is rethrown so real faults
+      // are not silently swallowed into a "failed" count.
+      if (
+        error instanceof NotFoundError ||
+        error instanceof ForbiddenError ||
+        error instanceof ConflictError ||
+        // `assertTransition` rejects a status move that the graph disallows;
+        // that is a per-item outcome, not a fault in the batch.
+        error instanceof ValidationError
+      ) {
+        failed.push({ actionId, reason: error.message });
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  await recordAuditEvent({
+    organizationId: params.organizationId,
+    actorId: params.actorId,
+    actorName: params.actorName,
+    action: BULK_AUDIT_ACTION[params.operation],
+    entityType: 'ACTION',
+    entityId: null,
+    metadata: {
+      requested: params.actionIds.length,
+      succeeded,
+      failed: failed.length,
+      status: params.status ?? null,
+      assigneeId: params.assigneeId ?? null,
+      priority: params.priority ?? null,
+    },
+  });
+
+  return { requested: params.actionIds.length, succeeded, failed };
+}
+
 export async function deleteAction(params: {
   organizationId: Types.ObjectId;
   actionId: string;
@@ -715,8 +839,9 @@ export async function approveSuggestion(params: {
 /**
  * Edit a pending AI suggestion.
  *
- * The original AI values are preserved in `rawResult` on the extraction, and
- * `edited` flags the suggestion so the UI can show that a human changed it.
+ * The first human edit snapshots the AI's original values into `original`, so
+ * the reviewer can always compare what the model proposed against what they
+ * changed. Later edits keep the same snapshot and only update the working copy.
  */
 export async function editSuggestion(params: {
   organizationId: Types.ObjectId;
@@ -741,30 +866,72 @@ export async function editSuggestion(params: {
     });
   }
 
-  const set: Record<string, unknown> = {
-    'actions.$[target].edited': true,
-    'actions.$[target].reviewerId': params.actorId,
-    'actions.$[target].reviewedAt': new Date(),
-  };
-
-  if (params.input.title !== undefined) set['actions.$[target].title'] = params.input.title;
-  if (params.input.description !== undefined) set['actions.$[target].description'] = params.input.description;
-  if (params.input.priority !== undefined) set['actions.$[target].priority'] = params.input.priority;
-  if (params.input.dueDate !== undefined) set['actions.$[target].dueDate'] = params.input.dueDate;
+  const fields: Record<string, unknown> = {};
+  if (params.input.title !== undefined) fields.title = params.input.title;
+  if (params.input.description !== undefined) fields.description = params.input.description;
+  if (params.input.priority !== undefined) fields.priority = params.input.priority;
+  if (params.input.dueDate !== undefined) fields.dueDate = params.input.dueDate;
   if (params.input.assigneeId !== undefined) {
-    set['actions.$[target].assigneeId'] = params.input.assigneeId;
+    fields.assigneeId = params.input.assigneeId
+      ? new Types.ObjectId(params.input.assigneeId)
+      : null;
     // A human-chosen assignee supersedes the name the AI guessed.
-    if (params.input.assigneeId === null) set['actions.$[target].assigneeName'] = null;
+    if (params.input.assigneeId === null) fields.assigneeName = null;
   }
 
+  // A single pipeline update keeps the snapshot and the edits atomic: `original`
+  // is written from the pre-edit values only when it is still null, so repeated
+  // edits never overwrite the AI's first proposal with a human's later revision.
   const result = await DocumentExtraction.updateOne(
     {
       organizationId: params.organizationId,
       documentId: new Types.ObjectId(params.documentId),
       actions: { $elemMatch: { suggestionId: params.suggestionId, status: 'PENDING' } },
     },
-    { $set: set },
-    { arrayFilters: [{ 'target.suggestionId': params.suggestionId, 'target.status': 'PENDING' }] },
+    [
+      {
+        $set: {
+          actions: {
+            $map: {
+              input: '$actions',
+              as: 'suggestion',
+              in: {
+                $cond: [
+                  { $eq: ['$$suggestion.suggestionId', params.suggestionId] },
+                  {
+                    $mergeObjects: [
+                      '$$suggestion',
+                      {
+                        original: {
+                          $ifNull: [
+                            '$$suggestion.original',
+                            {
+                              title: '$$suggestion.title',
+                              description: '$$suggestion.description',
+                              assigneeName: '$$suggestion.assigneeName',
+                              dueDate: '$$suggestion.dueDate',
+                              priority: '$$suggestion.priority',
+                            },
+                          ],
+                        },
+                        edited: true,
+                        reviewerId: params.actorId,
+                        reviewedAt: new Date(),
+                      },
+                      fields,
+                    ],
+                  },
+                  '$$suggestion',
+                ],
+              },
+            },
+          },
+        },
+      },
+    ],
+    // Mongoose 9 refuses an array update unless this opt-in is explicit; it is
+    // what makes the snapshot-and-edit a single atomic document update.
+    { updatePipeline: true },
   );
 
   if (result.matchedCount === 0) {

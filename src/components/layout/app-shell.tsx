@@ -18,7 +18,7 @@ interface AppShellProps {
   activeOrganizationId: string;
   user: { name: string; email: string };
   role: UserRole;
-  counts?: { openActions?: number; reviewDocuments?: number };
+  counts?: { openActions?: number; reviewDocuments?: number; unreadNotifications?: number };
 }
 
 export function AppShell({

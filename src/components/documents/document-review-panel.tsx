@@ -272,6 +272,43 @@ export function DocumentReviewPanel({
                           {suggestion.description}
                         </p>
                       ) : null}
+                      {suggestion.original ? (
+                        <details className="pt-1 text-xs">
+                          <summary className="cursor-pointer list-none text-muted-foreground hover:text-foreground">
+                            Original AI proposal
+                          </summary>
+                          <dl className="mt-1.5 space-y-1 rounded-md border border-border bg-muted/40 p-2.5">
+                            <div className="flex gap-2">
+                              <dt className="w-16 shrink-0 text-muted-foreground">Title</dt>
+                              <dd className="min-w-0 flex-1">{suggestion.original.title}</dd>
+                            </div>
+                            {suggestion.original.description ? (
+                              <div className="flex gap-2">
+                                <dt className="w-16 shrink-0 text-muted-foreground">Details</dt>
+                                <dd className="min-w-0 flex-1">{suggestion.original.description}</dd>
+                              </div>
+                            ) : null}
+                            <div className="flex gap-2">
+                              <dt className="w-16 shrink-0 text-muted-foreground">Assignee</dt>
+                              <dd className="min-w-0 flex-1">
+                                {suggestion.original.assigneeName ?? 'Not specified'}
+                              </dd>
+                            </div>
+                            <div className="flex gap-2">
+                              <dt className="w-16 shrink-0 text-muted-foreground">Due</dt>
+                              <dd className="min-w-0 flex-1">
+                                {suggestion.original.dueDate
+                                  ? suggestion.original.dueDate.slice(0, 10)
+                                  : 'Not specified'}
+                              </dd>
+                            </div>
+                            <div className="flex gap-2">
+                              <dt className="w-16 shrink-0 text-muted-foreground">Priority</dt>
+                              <dd className="min-w-0 flex-1">{suggestion.original.priority}</dd>
+                            </div>
+                          </dl>
+                        </details>
+                      ) : null}
                     </div>
 
                     <div className="flex shrink-0 flex-col items-end gap-1.5">
