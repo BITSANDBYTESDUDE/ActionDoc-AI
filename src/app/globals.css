@@ -1,0 +1,155 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens.
+ *
+ * The palette is deliberately restrained: a single accent, neutral greys and
+ * semantic status colours. Status colours are defined once here so badges,
+ * charts and calendar cells all agree.
+ */
+@theme {
+  --color-background: oklch(0.99 0 0);
+  --color-foreground: oklch(0.21 0.02 265);
+
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.21 0.02 265);
+
+  --color-muted: oklch(0.968 0.003 265);
+  --color-muted-foreground: oklch(0.53 0.015 265);
+
+  --color-border: oklch(0.918 0.004 265);
+  --color-input: oklch(0.918 0.004 265);
+  --color-ring: oklch(0.55 0.16 264);
+
+  --color-primary: oklch(0.53 0.19 264);
+  --color-primary-foreground: oklch(0.99 0 0);
+
+  --color-secondary: oklch(0.968 0.003 265);
+  --color-secondary-foreground: oklch(0.28 0.02 265);
+
+  --color-accent: oklch(0.955 0.012 264);
+  --color-accent-foreground: oklch(0.3 0.04 264);
+
+  --color-destructive: oklch(0.56 0.21 27);
+  --color-destructive-foreground: oklch(0.99 0 0);
+
+  --color-success: oklch(0.58 0.14 155);
+  --color-warning: oklch(0.7 0.16 70);
+  --color-info: oklch(0.6 0.15 240);
+
+  --radius-lg: 0.75rem;
+  --radius-md: 0.5rem;
+  --radius-sm: 0.375rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  @theme {
+    --color-background: oklch(0.17 0.014 265);
+    --color-foreground: oklch(0.96 0.003 265);
+    --color-card: oklch(0.21 0.016 265);
+    --color-card-foreground: oklch(0.96 0.003 265);
+    --color-muted: oklch(0.26 0.016 265);
+    --color-muted-foreground: oklch(0.7 0.015 265);
+    --color-border: oklch(0.3 0.016 265);
+    --color-input: oklch(0.3 0.016 265);
+    --color-secondary: oklch(0.26 0.016 265);
+    --color-secondary-foreground: oklch(0.96 0.003 265);
+    --color-accent: oklch(0.3 0.02 264);
+    --color-accent-foreground: oklch(0.94 0.01 264);
+  }
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Visible, consistent focus ring for keyboard users only. */
+  :focus-visible {
+    outline: 2px solid var(--color-ring);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklch, var(--color-primary) 25%, transparent);
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Subtle entrance used by lists and cards; respects reduced-motion below. */
+  .animate-in-up {
+    animation: in-up 0.24s ease-out both;
+  }
+
+  @keyframes in-up {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--color-muted) 100%, transparent) 25%,
+      color-mix(in oklch, var(--color-border) 60%, var(--color-muted)) 37%,
+      color-mix(in oklch, var(--color-muted) 100%, transparent) 63%
+    );
+    background-size: 400% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: 100% 50%;
+    }
+    100% {
+      background-position: 0 50%;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+@layer utilities {
+  /* Native select caret, drawn in CSS so it inherits the theme. */
+  .select-caret {
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--color-muted-foreground) 50%),
+      linear-gradient(135deg, var(--color-muted-foreground) 50%, transparent 50%);
+    background-position:
+      calc(100% - 16px) calc(50% + 1px),
+      calc(100% - 11px) calc(50% + 1px);
+    background-size:
+      5px 5px,
+      5px 5px;
+    background-repeat: no-repeat;
+  }
+}
