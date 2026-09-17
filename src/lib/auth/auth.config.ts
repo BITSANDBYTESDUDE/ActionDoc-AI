@@ -9,7 +9,10 @@ import type { NextAuthConfig } from 'next-auth';
  */
 export const authConfig = {
   trustHost: true,
-  secret: process.env.AUTH_SECRET,
+  secret:
+    process.env.AUTH_SECRET ||
+    process.env.NEXTAUTH_SECRET ||
+    'actiondoc-ai-dev-secret-key-must-be-at-least-32-chars-long',
   session: {
     strategy: 'jwt',
     maxAge: 60 * 60 * 24 * 30,

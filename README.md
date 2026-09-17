@@ -380,11 +380,24 @@ The fastest working setup:
 
 ```bash
 MONGODB_URI=mongodb://127.0.0.1:27017/actiondoc
-AUTH_SECRET=any-long-random-string
+AUTH_SECRET=any-long-random-string-at-least-32-chars
 STORAGE_DRIVER=memory        # files live in process memory
 # no REDIS_URL -> processing runs inline in the request
-OPENAI_API_KEY=sk-...        # the only truly required external service
+OPENAI_API_KEY=sk-...        # required for AI extraction features
 ```
+
+### Troubleshooting Auth.js / NextAuth Errors
+
+If you encounter the following console errors when rendering pages such as `LoginPage`:
+1. `[auth][error] MissingSecret: Please define a secret`
+2. `Console Error at assertConfig ... at Auth`
+
+**Root Cause:** NextAuth v5 requires a secret key (`AUTH_SECRET` or `NEXTAUTH_SECRET`) to sign JWT tokens. If no environment file (`.env` or `.env.local`) exists or `AUTH_SECRET` is undefined, NextAuth throws a `MissingSecret` error and `assertConfig` fails during `Auth()` evaluation.
+
+**Resolution:**
+- Copy `.env.example` to `.env.local` or `.env` and set `AUTH_SECRET` (minimum 16-32 characters).
+- The fallback secret in `src/lib/auth/auth.config.ts` ensures that even during local development without a explicit `.env` file, NextAuth defaults to a safe fallback secret instead of crashing.
+
 
 ### Running workers
 

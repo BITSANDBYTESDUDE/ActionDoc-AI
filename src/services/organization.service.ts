@@ -6,6 +6,7 @@ import { User } from '@/models/User';
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '@/lib/errors';
 import { recordAuditEvent } from '@/services/audit.service';
 import { isUserRole } from '@/lib/permissions';
+import { supportsTransactions, isTransactionUnsupportedError } from '@/lib/db/transaction';
 import type { MembershipDocument } from '@/models/Membership';
 import type { UserRole } from '@/types';
 
@@ -80,22 +81,42 @@ export async function createOrganization(params: {
   const slug = await generateUniqueSlug(name);
   const userId = new Types.ObjectId(params.userId);
 
-  const session = await safeStartSession();
+  let session = await safeStartSession();
   let organizationId: Types.ObjectId;
   let slugValue = slug;
 
   try {
     if (session) {
-      const created = await Organization.create(
-        [{ name, slug, createdById: userId }],
-        { session },
-      );
-      organizationId = created[0]!._id;
-      await Membership.create(
-        [{ userId, organizationId, role: 'OWNER', isPrimaryOwner: true }],
-        { session },
-      );
-      await session.commitTransaction();
+      try {
+        const created = await Organization.create(
+          [{ name, slug, createdById: userId }],
+          { session },
+        );
+        organizationId = created[0]!._id;
+        await Membership.create(
+          [{ userId, organizationId, role: 'OWNER', isPrimaryOwner: true }],
+          { session },
+        );
+        await session.commitTransaction();
+      } catch (error) {
+        if (session) {
+          await session.abortTransaction().catch(() => undefined);
+          session = null;
+        }
+        if (isTransactionUnsupportedError(error)) {
+          console.warn('[organization] deployment does not support transactions, using compensating writes');
+          const created = await Organization.create({ name, slug, createdById: userId });
+          organizationId = created._id;
+          try {
+            await Membership.create({ userId, organizationId, role: 'OWNER', isPrimaryOwner: true });
+          } catch (createError) {
+            await Organization.deleteOne({ _id: organizationId });
+            throw createError;
+          }
+        } else {
+          throw error;
+        }
+      }
     } else {
       const created = await Organization.create({ name, slug, createdById: userId });
       organizationId = created._id;
@@ -374,6 +395,7 @@ function isDuplicateKeyError(error: unknown): boolean {
 
 /** Transactions require a replica set; degrade gracefully on standalone. */
 async function safeStartSession(): Promise<ClientSession | null> {
+  if (!supportsTransactions()) return null;
   try {
     const session = await mongoose.startSession();
     session.startTransaction();

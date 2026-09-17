@@ -39,7 +39,6 @@ export async function connectToDatabase(): Promise<Mongoose> {
         socketTimeoutMS: 45_000,
         connectTimeoutMS: 10_000,
         maxIdleTimeMS: 60_000,
-        retryWrites: true,
       })
       .catch((error) => {
         globalCache.promise = null;
