@@ -13,7 +13,13 @@ const BASE_BACKOFF_MS = 500;
 /** Errors worth retrying: rate limits, upstream 5xx and network blips. */
 function isRetryable(error: unknown): boolean {
   if (error instanceof OpenAI.APIError) {
-    if (error.status === 429) return true;
+    if (error.status === 429) {
+      const msg = error.message.toLowerCase();
+      if (msg.includes('credits') || msg.includes('quota') || msg.includes('billing')) {
+        return false;
+      }
+      return true;
+    }
     if (typeof error.status === 'number' && error.status >= 500) return true;
     return false;
   }

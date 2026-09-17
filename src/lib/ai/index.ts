@@ -1,5 +1,6 @@
 import { ExternalServiceError } from '@/lib/errors';
 import { OpenAiProvider } from '@/lib/ai/openai.provider';
+import { MockAiProvider } from '@/lib/ai/mock.provider';
 import type { TextGenerationProvider } from '@/lib/ai/provider';
 
 class UnconfiguredProvider implements TextGenerationProvider {
@@ -19,8 +20,13 @@ let cached: TextGenerationProvider | null = null;
 export function getGenerationProvider(): TextGenerationProvider {
   if (cached) return cached;
 
+  if (process.env.ENABLE_MOCK_AI === 'true') {
+    cached = new MockAiProvider();
+    return cached;
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
+  if (!apiKey || apiKey === 'sk-replace-me') {
     cached = new UnconfiguredProvider();
     return cached;
   }

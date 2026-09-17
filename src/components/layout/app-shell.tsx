@@ -7,6 +7,7 @@ import { SidebarNav } from '@/components/layout/sidebar-nav';
 import { OrgSwitcher } from '@/components/layout/org-switcher';
 import { NotificationBell } from '@/components/layout/notification-bell';
 import { UserMenu } from '@/components/layout/user-menu';
+import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { APP_NAME } from '@/config/constants';
 import type { OrganizationSummary } from '@/services/organization.service';
@@ -113,6 +114,7 @@ export function AppShell({
           </div>
 
           <div className="ml-auto flex items-center gap-1">
+            <ThemeToggle />
             <NotificationBell />
             <UserMenu name={user.name} email={user.email} role={role} />
           </div>

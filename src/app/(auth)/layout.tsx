@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { FileStack } from 'lucide-react';
+import { ThemeToggle } from '@/components/layout/theme-toggle';
 import { APP_NAME, APP_TAGLINE } from '@/config/constants';
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
@@ -49,7 +50,10 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         </p>
       </div>
 
-      <div className="flex items-center justify-center px-6 py-12">
+      <div className="relative flex items-center justify-center px-6 py-12">
+        <div className="absolute top-4 right-4">
+          <ThemeToggle />
+        </div>
         <div className="w-full max-w-sm">{children}</div>
       </div>
     </div>
